@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8" />
-    <title>Майнкрафт — Быстрый</title>
+    <title>Майнкрафт — Исправленный</title>
     <style>
         * {
             margin: 0;
@@ -176,8 +176,9 @@
         // 2. НАСТРОЙКИ
         // ============================================================
         const WORLD_SIZE = 16;
-        const EYE_HEIGHT = 1.6; // Глаза на 1.6 выше ног
-        const PLAYER_HEIGHT = 1.8; // Полный рост игрока
+        const EYE_HEIGHT = 1.6;
+        const PLAYER_RADIUS = 0.3;
+        const PLAYER_HEIGHT = 1.8;
 
         const BLOCK_NAMES = ['grass', 'dirt', 'stone', 'wood', 'leaves', 'sand', 'planks'];
         const BLOCK_COLORS = [
@@ -212,7 +213,7 @@
         scene.add(sun);
 
         // ============================================================
-        // 5. ШУМ (быстрый)
+        // 5. ШУМ
         // ============================================================
         const perm = new Uint8Array(512);
         const p = new Uint8Array(256);
@@ -272,13 +273,12 @@
         }
 
         // ============================================================
-        // 6. БЛОКИ (оптимизированные)
+        // 6. БЛОКИ
         // ============================================================
         const blockGeom = new THREE.BoxGeometry(1, 1, 1);
         const blockMeshes = new Map();
         const blockData = new Map();
 
-        // Кэш материалов
         const matCache = {};
         for (const name of BLOCK_NAMES) {
             const idx = BLOCK_NAMES.indexOf(name);
@@ -393,7 +393,7 @@
         controls.addEventListener('unlock', () => blocker.style.display = 'flex');
 
         // ============================================================
-        // 9. ФИЗИКА (БЫСТРАЯ)
+        // 9. ФИЗИКА (НАДЁЖНАЯ)
         // ============================================================
         let vy = 0;
         let onGround = false;
@@ -402,42 +402,46 @@
         const moveSpeed = 5;
         const keys = {};
 
-        // БЫСТРАЯ проверка блока
-        function getBlock(x, y, z) {
+        // Проверка, есть ли блок в позиции
+        function hasBlock(x, y, z) {
             const bx = Math.floor(x);
             const by = Math.floor(y);
             const bz = Math.floor(z);
-            return blockMeshes.get(`${bx},${by},${bz}`) || null;
+            return blockMeshes.has(`${bx},${by},${bz}`);
         }
 
-        // Проверка, может ли игрок стоять в позиции (ноги + голова)
-        function canStand(footX, footY, footZ) {
-            // Проверяем ноги (Y)
-            const by = Math.floor(footY);
-            // Проверяем 2 блока по высоте (ноги и голова)
-            for (let dy = 0; dy < 2; dy++) {
-                const checkY = footY + dy;
-                // Проверяем центр и 4 стороны (не все 9, для скорости)
-                const checks = [
-                    [0, 0],
-                    [0.3, 0],
-                    [-0.3, 0],
-                    [0, 0.3],
-                    [0, -0.3]
-                ];
+        // Проверка, пересекает ли игрок какой-либо блок
+        function collidesWithWorld(px, py, pz) {
+            // Проверяем 8 углов и центр на каждом уровне
+            const half = PLAYER_RADIUS;
+            const checks = [
+                [0, 0],
+                [half, 0],
+                [-half, 0],
+                [0, half],
+                [0, -half],
+                [half, half],
+                [-half, half],
+                [half, -half],
+                [-half, -half]
+            ];
+
+            // Проверяем по высоте: ноги, центр тела, голова
+            for (let dy = 0; dy <= 2; dy++) {
+                const yPos = py + dy * 0.6;
+                if (yPos > py + PLAYER_HEIGHT) continue;
+
                 for (const [dx, dz] of checks) {
-                    const bx = Math.floor(footX + dx);
-                    const by2 = Math.floor(checkY);
-                    const bz = Math.floor(footZ + dz);
-                    const key = `${bx},${by2},${bz}`;
+                    const bx = Math.floor(px + dx);
+                    const by = Math.floor(yPos);
+                    const bz = Math.floor(pz + dz);
+                    const key = `${bx},${by},${bz}`;
                     if (blockMeshes.has(key)) {
-                        // Если блок на уровне ног И мы стоим на нём — пропускаем
-                        if (dy === 0 && Math.abs(footY - by2 - 1) < 0.1) continue;
-                        return false;
+                        return true;
                     }
                 }
             }
-            return true;
+            return false;
         }
 
         function updatePlayer(delta) {
@@ -470,26 +474,28 @@
             const footY = camera.position.y - EYE_HEIGHT;
             const footZ = camera.position.z;
 
-            // Движение по X
-            if (canStand(footX + move.x, footY, footZ)) {
-                camera.position.x += move.x;
+            // ---- ДВИЖЕНИЕ ПО X ----
+            const newX = footX + move.x;
+            if (!collidesWithWorld(newX, footY, footZ)) {
+                camera.position.x = newX;
             }
 
-            // Движение по Z
-            if (canStand(footX, footY, footZ + move.z)) {
-                camera.position.z += move.z;
+            // ---- ДВИЖЕНИЕ ПО Z ----
+            const newZ = footZ + move.z;
+            if (!collidesWithWorld(camera.position.x, footY, newZ)) {
+                camera.position.z = newZ;
             }
 
-            // Движение по Y
+            // ---- ДВИЖЕНИЕ ПО Y ----
             const newY = footY + vy * delta;
-            if (canStand(footX, newY, footZ)) {
+            if (!collidesWithWorld(camera.position.x, newY, camera.position.z)) {
                 camera.position.y += vy * delta;
                 onGround = false;
             } else {
                 if (vy < 0) {
                     onGround = true;
                     vy = 0;
-                    // Приземление
+                    // Приземляем на блок
                     const groundY = Math.floor(footY);
                     camera.position.y = groundY + EYE_HEIGHT + 0.01;
                 } else {
@@ -497,15 +503,16 @@
                 }
             }
 
-            // Проверка головы (чтобы не залезать в блоки)
+            // ---- ПРОВЕРКА ГОЛОВЫ ----
+            // Если голова в блоке — выдавливаем вниз
             const headY = camera.position.y;
-            if (!canStand(footX, headY - EYE_HEIGHT, footZ)) {
-                // Голова в блоке — отталкиваем вниз
+            if (collidesWithWorld(camera.position.x, headY - EYE_HEIGHT + PLAYER_HEIGHT - 0.1, camera.position.z)) {
                 if (vy > 0) vy = 0;
                 const blockY = Math.floor(headY);
                 camera.position.y = blockY - 0.1;
             }
 
+            // ---- ПАДЕНИЕ В БЕЗДНУ ----
             if (camera.position.y < -5) {
                 camera.position.set(0, 20, 0);
                 vy = 0;
@@ -514,7 +521,7 @@
         }
 
         // ============================================================
-        // 10. RAYCASTER (ПРАВИЛЬНЫЙ)
+        // 10. RAYCASTER
         // ============================================================
         const raycaster = new THREE.Raycaster();
         raycaster.far = 6;
@@ -523,7 +530,6 @@
         function getTargetBlock() {
             raycaster.setFromCamera(new THREE.Vector2(0.5, 0.5), camera);
 
-            // Собираем все меши
             const meshes = [];
             for (const [key, mesh] of blockMeshes) {
                 meshes.push(mesh);
@@ -547,7 +553,6 @@
                 worldGroup.remove(mesh);
                 blockMeshes.delete(key);
                 blockData.delete(key);
-                // Чистим память
                 if (Array.isArray(mesh.material)) {
                     mesh.material.forEach(m => m.dispose());
                 } else {
@@ -696,8 +701,8 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         });
 
-        console.log('✅ Супер-быстрая версия загружена!');
-        console.log(`👤 Рост игрока: ${PLAYER_HEIGHT} блоков (глаза на ${EYE_HEIGHT})`);
+        console.log('✅ Исправленная версия с надёжной физикой загружена!');
+        console.log(`👤 Рост: ${PLAYER_HEIGHT} блоков, радиус: ${PLAYER_RADIUS}`);
         console.log(`🧊 Блоков: ${blockMeshes.size}`);
     </script>
 </body>
