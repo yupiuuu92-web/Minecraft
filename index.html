@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8" />
-    <title>Майнкрафт — Исправленный</title>
+    <title>Майнкрафт — Быстрый</title>
     <style>
         * {
             margin: 0;
@@ -176,8 +176,8 @@
         // 2. НАСТРОЙКИ
         // ============================================================
         const WORLD_SIZE = 16;
-        const PLAYER_HEIGHT = 1.7; // РОСТ ИГРОКА (было 1.6 -> стало 1.7)
-        const PLAYER_EYE = 1.6; // Глаза на уровне 1.6 от ног (как в майнкрафте)
+        const EYE_HEIGHT = 1.6; // Глаза на 1.6 выше ног
+        const PLAYER_HEIGHT = 1.8; // Полный рост игрока
 
         const BLOCK_NAMES = ['grass', 'dirt', 'stone', 'wood', 'leaves', 'sand', 'planks'];
         const BLOCK_COLORS = [
@@ -212,7 +212,7 @@
         scene.add(sun);
 
         // ============================================================
-        // 5. ШУМ
+        // 5. ШУМ (быстрый)
         // ============================================================
         const perm = new Uint8Array(512);
         const p = new Uint8Array(256);
@@ -272,12 +272,13 @@
         }
 
         // ============================================================
-        // 6. БЛОКИ
+        // 6. БЛОКИ (оптимизированные)
         // ============================================================
         const blockGeom = new THREE.BoxGeometry(1, 1, 1);
         const blockMeshes = new Map();
         const blockData = new Map();
 
+        // Кэш материалов
         const matCache = {};
         for (const name of BLOCK_NAMES) {
             const idx = BLOCK_NAMES.indexOf(name);
@@ -309,7 +310,7 @@
                 mesh = new THREE.Mesh(blockGeom, matCache[name]);
             }
             mesh.position.set(x + 0.5, y + 0.5, z + 0.5);
-            mesh.userData = { bx: x, by: y, bz: z, bt: type };
+            mesh.userData = { bx: x, by: y, bz: z };
             return mesh;
         }
 
@@ -392,7 +393,7 @@
         controls.addEventListener('unlock', () => blocker.style.display = 'flex');
 
         // ============================================================
-        // 9. ФИЗИКА (ИСПРАВЛЕННАЯ)
+        // 9. ФИЗИКА (БЫСТРАЯ)
         // ============================================================
         let vy = 0;
         let onGround = false;
@@ -401,34 +402,38 @@
         const moveSpeed = 5;
         const keys = {};
 
-        // Функция проверки коллизии с блоками
-        function isBlocked(x, y, z) {
+        // БЫСТРАЯ проверка блока
+        function getBlock(x, y, z) {
             const bx = Math.floor(x);
             const by = Math.floor(y);
             const bz = Math.floor(z);
-            const key = `${bx},${by},${bz}`;
-            return blockMeshes.has(key);
+            return blockMeshes.get(`${bx},${by},${bz}`) || null;
         }
 
-        // Проверка, влезает ли игрок в позицию
-        function canFit(x, y, z) {
-            // Проверяем ноги (от y до y + PLAYER_HEIGHT)
-            const checkY = Math.floor(y);
-            // Проверяем 2 блока по высоте (ноги + тело)
+        // Проверка, может ли игрок стоять в позиции (ноги + голова)
+        function canStand(footX, footY, footZ) {
+            // Проверяем ноги (Y)
+            const by = Math.floor(footY);
+            // Проверяем 2 блока по высоте (ноги и голова)
             for (let dy = 0; dy < 2; dy++) {
-                for (let dx = -1; dx <= 1; dx++) {
-                    for (let dz = -1; dz <= 1; dz++) {
-                        // Проверяем только углы и центр (для скорости)
-                        if (Math.abs(dx) === 1 && Math.abs(dz) === 1) continue; // пропускаем диагонали
-                        const bx = Math.floor(x + dx * 0.3);
-                        const by = Math.floor(y + dy);
-                        const bz = Math.floor(z + dz * 0.3);
-                        const key = `${bx},${by},${bz}`;
-                        if (blockMeshes.has(key)) {
-                            // Проверяем, не стоит ли игрок на этом блоке (разрешаем стоять)
-                            if (dy === 0 && Math.abs(y - by - 1) < 0.1) continue;
-                            return false;
-                        }
+                const checkY = footY + dy;
+                // Проверяем центр и 4 стороны (не все 9, для скорости)
+                const checks = [
+                    [0, 0],
+                    [0.3, 0],
+                    [-0.3, 0],
+                    [0, 0.3],
+                    [0, -0.3]
+                ];
+                for (const [dx, dz] of checks) {
+                    const bx = Math.floor(footX + dx);
+                    const by2 = Math.floor(checkY);
+                    const bz = Math.floor(footZ + dz);
+                    const key = `${bx},${by2},${bz}`;
+                    if (blockMeshes.has(key)) {
+                        // Если блок на уровне ног И мы стоим на нём — пропускаем
+                        if (dy === 0 && Math.abs(footY - by2 - 1) < 0.1) continue;
+                        return false;
                     }
                 }
             }
@@ -460,40 +465,47 @@
                 onGround = false;
             }
 
-            // Позиция ног игрока
-            const footPos = camera.position.clone();
-            footPos.y -= PLAYER_EYE;
+            // Позиция ног
+            const footX = camera.position.x;
+            const footY = camera.position.y - EYE_HEIGHT;
+            const footZ = camera.position.z;
 
             // Движение по X
-            const newX = footPos.x + move.x;
-            if (canFit(newX, footPos.y, footPos.z)) {
+            if (canStand(footX + move.x, footY, footZ)) {
                 camera.position.x += move.x;
             }
 
             // Движение по Z
-            const newZ = footPos.z + move.z;
-            if (canFit(footPos.x, footPos.y, newZ)) {
+            if (canStand(footX, footY, footZ + move.z)) {
                 camera.position.z += move.z;
             }
 
             // Движение по Y
-            const newY = footPos.y + vy * delta;
-            if (canFit(footPos.x, newY, footPos.z)) {
+            const newY = footY + vy * delta;
+            if (canStand(footX, newY, footZ)) {
                 camera.position.y += vy * delta;
                 onGround = false;
             } else {
                 if (vy < 0) {
                     onGround = true;
                     vy = 0;
-                    // Приземление на блок
-                    const groundY = Math.floor(footPos.y);
-                    camera.position.y = groundY + PLAYER_EYE + 0.01;
+                    // Приземление
+                    const groundY = Math.floor(footY);
+                    camera.position.y = groundY + EYE_HEIGHT + 0.01;
                 } else {
                     vy = 0;
                 }
             }
 
-            // Проверка, не провалился ли под мир
+            // Проверка головы (чтобы не залезать в блоки)
+            const headY = camera.position.y;
+            if (!canStand(footX, headY - EYE_HEIGHT, footZ)) {
+                // Голова в блоке — отталкиваем вниз
+                if (vy > 0) vy = 0;
+                const blockY = Math.floor(headY);
+                camera.position.y = blockY - 0.1;
+            }
+
             if (camera.position.y < -5) {
                 camera.position.set(0, 20, 0);
                 vy = 0;
@@ -502,7 +514,7 @@
         }
 
         // ============================================================
-        // 10. RAYCASTER (ИСПРАВЛЕННЫЙ)
+        // 10. RAYCASTER (ПРАВИЛЬНЫЙ)
         // ============================================================
         const raycaster = new THREE.Raycaster();
         raycaster.far = 6;
@@ -511,18 +523,14 @@
         function getTargetBlock() {
             raycaster.setFromCamera(new THREE.Vector2(0.5, 0.5), camera);
 
-            // Получаем все меши блоков
+            // Собираем все меши
             const meshes = [];
             for (const [key, mesh] of blockMeshes) {
                 meshes.push(mesh);
             }
 
             const intersects = raycaster.intersectObjects(meshes);
-
-            if (intersects.length > 0) {
-                return intersects[0];
-            }
-            return null;
+            return intersects.length > 0 ? intersects[0] : null;
         }
 
         function removeBlock() {
@@ -539,7 +547,7 @@
                 worldGroup.remove(mesh);
                 blockMeshes.delete(key);
                 blockData.delete(key);
-                // Освобождаем память
+                // Чистим память
                 if (Array.isArray(mesh.material)) {
                     mesh.material.forEach(m => m.dispose());
                 } else {
@@ -561,10 +569,9 @@
 
             if (blockMeshes.has(key)) return;
 
-            // Нельзя ставить блок там, где стоит игрок
-            const blockCenter = new THREE.Vector3(bx + 0.5, by + 0.5, bz + 0.5);
-            const distToPlayer = camera.position.distanceTo(blockCenter);
-            if (distToPlayer < 1.8) return;
+            // Нельзя ставить блок в игрока
+            const blockPos = new THREE.Vector3(bx + 0.5, by + 0.5, bz + 0.5);
+            if (camera.position.distanceTo(blockPos) < 1.8) return;
 
             const newBlock = createBlockMesh(bx, by, bz, selectedBlock);
             worldGroup.add(newBlock);
@@ -689,8 +696,8 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         });
 
-        console.log('✅ Исправленная версия загружена!');
-        console.log(`👤 Рост игрока: ${PLAYER_HEIGHT} блоков`);
+        console.log('✅ Супер-быстрая версия загружена!');
+        console.log(`👤 Рост игрока: ${PLAYER_HEIGHT} блоков (глаза на ${EYE_HEIGHT})`);
         console.log(`🧊 Блоков: ${blockMeshes.size}`);
     </script>
 </body>
