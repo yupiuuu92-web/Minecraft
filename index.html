@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8" />
-    <title>Майнкрафт — Супер-оптимизированный</title>
+    <title>Майнкрафт — Исправленный</title>
     <style>
         * {
             margin: 0;
@@ -173,18 +173,20 @@
         import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 
         // ============================================================
-        // 2. НАСТРОЙКИ (оптимизировано для слабого ПК)
+        // 2. НАСТРОЙКИ
         // ============================================================
-        const WORLD_SIZE = 16; // МЕНЬШЕ — БЫСТРЕЕ
+        const WORLD_SIZE = 16;
+        const PLAYER_HEIGHT = 1.7; // РОСТ ИГРОКА (было 1.6 -> стало 1.7)
+        const PLAYER_EYE = 1.6; // Глаза на уровне 1.6 от ног (как в майнкрафте)
+
         const BLOCK_NAMES = ['grass', 'dirt', 'stone', 'wood', 'leaves', 'sand', 'planks'];
         const BLOCK_COLORS = [
             0x7CB342, 0x8D6E63, 0x9E9E9E, 0x6D4C41,
             0x2E7D32, 0xE8D5B7, 0xE8C99B
         ];
-        const BLOCK_EMOJI = ['🌿', '🟫', '🪨', '🪵', '🍃', '🟨', '📦'];
 
         // ============================================================
-        // 3. СЦЕНА (МАКСИМАЛЬНО ЛЕГКАЯ)
+        // 3. СЦЕНА
         // ============================================================
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x87CEEB);
@@ -193,30 +195,33 @@
         camera.position.set(8, 20, 8);
 
         const renderer = new THREE.WebGLRenderer({
-            antialias: false, // ОТКЛЮЧАЕМ — ЭТО ЖРЕТ GPU
+            antialias: false,
             powerPreference: "low-power"
         });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(1); // ФИКСИРУЕМ — НЕ ДАЕМ МАСШТАБИРОВАТЬСЯ
-        renderer.shadowMap.enabled = false; // ТЕНИ ВЫКЛЮЧЕНЫ
-        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer.setPixelRatio(1);
+        renderer.shadowMap.enabled = false;
         document.body.prepend(renderer.domElement);
 
         // ============================================================
-        // 4. ОСВЕЩЕНИЕ (минимальное)
+        // 4. ОСВЕЩЕНИЕ
         // ============================================================
-        const ambientLight = new THREE.AmbientLight(0x8080aa, 0.7);
-        scene.add(ambientLight);
-
-        const sunLight = new THREE.DirectionalLight(0xffeedd, 1.2);
-        sunLight.position.set(30, 50, 20);
-        scene.add(sunLight);
+        scene.add(new THREE.AmbientLight(0x8080aa, 0.7));
+        const sun = new THREE.DirectionalLight(0xffeedd, 1.2);
+        sun.position.set(30, 50, 20);
+        scene.add(sun);
 
         // ============================================================
-        // 5. ШУМ (простой, без классов)
+        // 5. ШУМ
         // ============================================================
-        // Таблица для шума Перлина (упрощенная)
         const perm = new Uint8Array(512);
+        const p = new Uint8Array(256);
+        for (let i = 0; i < 256; i++) p[i] = i;
+        for (let i = 255; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [p[i], p[j]] = [p[j], p[i]];
+        }
+        for (let i = 0; i < 512; i++) perm[i] = p[i & 255];
         const grad3 = [
             [1, 1, 0],
             [-1, 1, 0],
@@ -231,15 +236,6 @@
             [0, 1, -1],
             [0, -1, -1]
         ];
-
-        // Инициализация perm
-        const p = new Uint8Array(256);
-        for (let i = 0; i < 256; i++) p[i] = i;
-        for (let i = 255; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [p[i], p[j]] = [p[j], p[i]];
-        }
-        for (let i = 0; i < 512; i++) perm[i] = p[i & 255];
 
         function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
 
@@ -276,39 +272,31 @@
         }
 
         // ============================================================
-        // 6. БЛОКИ (САМЫЙ БЫСТРЫЙ СПОСОБ — ОДИН ГЕОМЕТРИЯ)
+        // 6. БЛОКИ
         // ============================================================
         const blockGeom = new THREE.BoxGeometry(1, 1, 1);
         const blockMeshes = new Map();
         const blockData = new Map();
 
-        // Кэш материалов (цветные, без текстур)
         const matCache = {};
         for (const name of BLOCK_NAMES) {
             const idx = BLOCK_NAMES.indexOf(name);
-            const color = BLOCK_COLORS[idx];
             matCache[name] = new THREE.MeshLambertMaterial({
-                color: color,
+                color: BLOCK_COLORS[idx],
                 flatShading: true,
             });
         }
-        // Особый материал для травы (верх зеленый)
-        const grassTopMat = new THREE.MeshLambertMaterial({ color: 0x7CB342, flatShading: true });
-        const grassSideMat = new THREE.MeshLambertMaterial({ color: 0x8D6E63, flatShading: true });
+        const grassTop = new THREE.MeshLambertMaterial({ color: 0x7CB342, flatShading: true });
+        const grassSide = new THREE.MeshLambertMaterial({ color: 0x8D6E63, flatShading: true });
         const dirtMat = new THREE.MeshLambertMaterial({ color: 0x8D6E63, flatShading: true });
 
         function createBlockMesh(x, y, z, type) {
             const name = BLOCK_NAMES[type];
             let mesh;
-
             if (name === 'grass') {
-                // Для травы используем массив материалов (6 граней)
-                const mats = [
-                    grassSideMat, grassSideMat, // right, left
-                    grassTopMat, dirtMat, // top, bottom
-                    grassSideMat, grassSideMat // front, back
-                ];
-                mesh = new THREE.Mesh(blockGeom, mats);
+                mesh = new THREE.Mesh(blockGeom, [
+                    grassSide, grassSide, grassTop, dirtMat, grassSide, grassSide
+                ]);
             } else if (name === 'leaves') {
                 const mat = new THREE.MeshLambertMaterial({
                     color: 0x2E7D32,
@@ -320,20 +308,18 @@
             } else {
                 mesh = new THREE.Mesh(blockGeom, matCache[name]);
             }
-
             mesh.position.set(x + 0.5, y + 0.5, z + 0.5);
             mesh.userData = { bx: x, by: y, bz: z, bt: type };
             return mesh;
         }
 
         // ============================================================
-        // 7. ГЕНЕРАЦИЯ МИРА (ОПТИМИЗИРОВАННАЯ)
+        // 7. ГЕНЕРАЦИЯ МИРА
         // ============================================================
         const worldGroup = new THREE.Group();
         scene.add(worldGroup);
 
         function generateWorld() {
-            // Очищаем
             for (const [key, mesh] of blockMeshes) {
                 worldGroup.remove(mesh);
             }
@@ -341,19 +327,15 @@
             blockData.clear();
 
             const half = WORLD_SIZE / 2;
-            let count = 0;
-
             for (let x = -half; x < half; x++) {
                 for (let z = -half; z < half; z++) {
                     const height = getHeight(x, z);
-
                     for (let y = 0; y <= height; y++) {
                         let type;
-                        if (y === height) type = 0; // grass
-                        else if (y > height - 3) type = 1; // dirt
-                        else type = 2; // stone
+                        if (y === height) type = 0;
+                        else if (y > height - 3) type = 1;
+                        else type = 2;
 
-                        // Деревья (редко)
                         if (y === height && Math.random() < 0.025 && height > 6) {
                             const th = 2 + Math.floor(Math.random() * 3);
                             for (let ty = 1; ty <= th; ty++) {
@@ -361,13 +343,11 @@
                                     by = y + ty,
                                     bz = z;
                                 const key = `${bx},${by},${bz}`;
-                                const mesh = createBlockMesh(bx, by, bz, 3); // wood
+                                const mesh = createBlockMesh(bx, by, bz, 3);
                                 worldGroup.add(mesh);
                                 blockMeshes.set(key, mesh);
                                 blockData.set(key, 3);
-                                count++;
                             }
-                            // крона
                             const lb = y + th - 1;
                             for (let lx = -1; lx <= 1; lx++) {
                                 for (let lz = -1; lz <= 1; lz++) {
@@ -379,11 +359,10 @@
                                             bz = z + lz;
                                         const key = `${bx},${by},${bz}`;
                                         if (!blockMeshes.has(key)) {
-                                            const mesh = createBlockMesh(bx, by, bz, 4); // leaves
+                                            const mesh = createBlockMesh(bx, by, bz, 4);
                                             worldGroup.add(mesh);
                                             blockMeshes.set(key, mesh);
                                             blockData.set(key, 4);
-                                            count++;
                                         }
                                     }
                                 }
@@ -396,13 +375,10 @@
                         worldGroup.add(mesh);
                         blockMeshes.set(key, mesh);
                         blockData.set(key, type);
-                        count++;
                     }
                 }
             }
-            console.log(`✅ Сгенерировано ${count} блоков`);
         }
-
         generateWorld();
 
         // ============================================================
@@ -416,7 +392,7 @@
         controls.addEventListener('unlock', () => blocker.style.display = 'flex');
 
         // ============================================================
-        // 9. ФИЗИКА (УПРОЩЕННАЯ, БЕЗ СЛОЖНЫХ КОЛЛИЗИЙ)
+        // 9. ФИЗИКА (ИСПРАВЛЕННАЯ)
         // ============================================================
         let vy = 0;
         let onGround = false;
@@ -424,6 +400,40 @@
         const jumpSpeed = 8;
         const moveSpeed = 5;
         const keys = {};
+
+        // Функция проверки коллизии с блоками
+        function isBlocked(x, y, z) {
+            const bx = Math.floor(x);
+            const by = Math.floor(y);
+            const bz = Math.floor(z);
+            const key = `${bx},${by},${bz}`;
+            return blockMeshes.has(key);
+        }
+
+        // Проверка, влезает ли игрок в позицию
+        function canFit(x, y, z) {
+            // Проверяем ноги (от y до y + PLAYER_HEIGHT)
+            const checkY = Math.floor(y);
+            // Проверяем 2 блока по высоте (ноги + тело)
+            for (let dy = 0; dy < 2; dy++) {
+                for (let dx = -1; dx <= 1; dx++) {
+                    for (let dz = -1; dz <= 1; dz++) {
+                        // Проверяем только углы и центр (для скорости)
+                        if (Math.abs(dx) === 1 && Math.abs(dz) === 1) continue; // пропускаем диагонали
+                        const bx = Math.floor(x + dx * 0.3);
+                        const by = Math.floor(y + dy);
+                        const bz = Math.floor(z + dz * 0.3);
+                        const key = `${bx},${by},${bz}`;
+                        if (blockMeshes.has(key)) {
+                            // Проверяем, не стоит ли игрок на этом блоке (разрешаем стоять)
+                            if (dy === 0 && Math.abs(y - by - 1) < 0.1) continue;
+                            return false;
+                        }
+                    }
+                }
+            }
+            return true;
+        }
 
         function updatePlayer(delta) {
             if (!controls.isLocked) return;
@@ -450,127 +460,115 @@
                 onGround = false;
             }
 
-            const newPos = camera.position.clone();
-            newPos.x += move.x;
-            newPos.y += vy * delta;
-            newPos.z += move.z;
+            // Позиция ног игрока
+            const footPos = camera.position.clone();
+            footPos.y -= PLAYER_EYE;
 
-            // ПРОСТАЯ КОЛЛИЗИЯ С ЗЕМЛЕЙ
-            const feetY = newPos.y - 1.6;
-            const bx = Math.round(newPos.x - 0.5);
-            const by = Math.round(feetY);
-            const bz = Math.round(newPos.z - 0.5);
-
-            let blocked = false;
-            for (let dx = -1; dx <= 1; dx++) {
-                for (let dz = -1; dz <= 1; dz++) {
-                    const key = `${bx+dx},${by},${bz+dz}`;
-                    if (blockMeshes.has(key)) {
-                        blocked = true;
-                        break;
-                    }
-                }
-                if (blocked) break;
+            // Движение по X
+            const newX = footPos.x + move.x;
+            if (canFit(newX, footPos.y, footPos.z)) {
+                camera.position.x += move.x;
             }
 
-            if (blocked && vy < 0) {
-                onGround = true;
-                vy = 0;
-                // прижимаем к земле
-                newPos.y = Math.floor(newPos.y - 0.5) + 1.6;
-            } else {
+            // Движение по Z
+            const newZ = footPos.z + move.z;
+            if (canFit(footPos.x, footPos.y, newZ)) {
+                camera.position.z += move.z;
+            }
+
+            // Движение по Y
+            const newY = footPos.y + vy * delta;
+            if (canFit(footPos.x, newY, footPos.z)) {
+                camera.position.y += vy * delta;
                 onGround = false;
-            }
-
-            // проверка головы
-            const headY = newPos.y;
-            const hy = Math.round(headY);
-            let headBlocked = false;
-            for (let dx = -1; dx <= 1; dx++) {
-                for (let dz = -1; dz <= 1; dz++) {
-                    const key = `${Math.round(newPos.x-0.5)+dx},${hy},${Math.round(newPos.z-0.5)+dz}`;
-                    if (blockMeshes.has(key)) { headBlocked = true; break; }
+            } else {
+                if (vy < 0) {
+                    onGround = true;
+                    vy = 0;
+                    // Приземление на блок
+                    const groundY = Math.floor(footPos.y);
+                    camera.position.y = groundY + PLAYER_EYE + 0.01;
+                } else {
+                    vy = 0;
                 }
-                if (headBlocked) break;
-            }
-            if (headBlocked && vy > 0) {
-                vy = 0;
             }
 
-            // горизонтальная коллизия (грубая)
-            const testX = new THREE.Vector3(newPos.x, camera.position.y, camera.position.z);
-            let blockedX = false;
-            const byX = Math.round(testX.y - 1.6);
-            for (let dz = -1; dz <= 1; dz++) {
-                const key = `${Math.round(testX.x-0.5)},${byX},${Math.round(testX.z-0.5)+dz}`;
-                if (blockMeshes.has(key)) { blockedX = true; break; }
-            }
-            if (!blockedX) camera.position.x = newPos.x;
-
-            const testZ = new THREE.Vector3(camera.position.x, camera.position.y, newPos.z);
-            let blockedZ = false;
-            const byZ = Math.round(testZ.y - 1.6);
-            for (let dx = -1; dx <= 1; dx++) {
-                const key = `${Math.round(testZ.x-0.5)+dx},${byZ},${Math.round(testZ.z-0.5)}`;
-                if (blockMeshes.has(key)) { blockedZ = true; break; }
-            }
-            if (!blockedZ) camera.position.z = newPos.z;
-
-            // вертикаль
-            if (!blocked) {
-                camera.position.y = newPos.y;
-            }
-
-            // не упасть
+            // Проверка, не провалился ли под мир
             if (camera.position.y < -5) {
-                camera.position.set(0, 15, 0);
+                camera.position.set(0, 20, 0);
                 vy = 0;
+                onGround = false;
             }
         }
 
         // ============================================================
-        // 10. RAYCASTER
+        // 10. RAYCASTER (ИСПРАВЛЕННЫЙ)
         // ============================================================
         const raycaster = new THREE.Raycaster();
         raycaster.far = 6;
         let selectedBlock = 0;
 
-        function getTarget() {
+        function getTargetBlock() {
             raycaster.setFromCamera(new THREE.Vector2(0.5, 0.5), camera);
-            const meshes = Array.from(blockMeshes.values());
-            const hits = raycaster.intersectObjects(meshes);
-            return hits.length > 0 ? hits[0] : null;
+
+            // Получаем все меши блоков
+            const meshes = [];
+            for (const [key, mesh] of blockMeshes) {
+                meshes.push(mesh);
+            }
+
+            const intersects = raycaster.intersectObjects(meshes);
+
+            if (intersects.length > 0) {
+                return intersects[0];
+            }
+            return null;
         }
 
         function removeBlock() {
-            const hit = getTarget();
+            const hit = getTargetBlock();
             if (!hit) return;
+
             const mesh = hit.object;
-            const key = `${mesh.userData.bx},${mesh.userData.by},${mesh.userData.bz}`;
+            const bx = mesh.userData.bx;
+            const by = mesh.userData.by;
+            const bz = mesh.userData.bz;
+            const key = `${bx},${by},${bz}`;
+
             if (blockMeshes.has(key)) {
                 worldGroup.remove(mesh);
                 blockMeshes.delete(key);
                 blockData.delete(key);
+                // Освобождаем память
+                if (Array.isArray(mesh.material)) {
+                    mesh.material.forEach(m => m.dispose());
+                } else {
+                    mesh.material.dispose();
+                }
             }
         }
 
         function placeBlock() {
-            const hit = getTarget();
+            const hit = getTargetBlock();
             if (!hit) return;
-            const n = hit.face.normal;
-            const d = hit.object.userData;
-            const bx = d.bx + Math.round(n.x);
-            const by = d.by + Math.round(n.y);
-            const bz = d.bz + Math.round(n.z);
-            const key = `${bx},${by},${bz}`;
-            if (blockMeshes.has(key)) return;
-            // нельзя ставить в игрока
-            const dist = camera.position.distanceTo(new THREE.Vector3(bx + 0.5, by + 0.5, bz + 0.5));
-            if (dist < 1.8) return;
 
-            const mesh = createBlockMesh(bx, by, bz, selectedBlock);
-            worldGroup.add(mesh);
-            blockMeshes.set(key, mesh);
+            const normal = hit.face.normal;
+            const mesh = hit.object;
+            const bx = mesh.userData.bx + Math.round(normal.x);
+            const by = mesh.userData.by + Math.round(normal.y);
+            const bz = mesh.userData.bz + Math.round(normal.z);
+            const key = `${bx},${by},${bz}`;
+
+            if (blockMeshes.has(key)) return;
+
+            // Нельзя ставить блок там, где стоит игрок
+            const blockCenter = new THREE.Vector3(bx + 0.5, by + 0.5, bz + 0.5);
+            const distToPlayer = camera.position.distanceTo(blockCenter);
+            if (distToPlayer < 1.8) return;
+
+            const newBlock = createBlockMesh(bx, by, bz, selectedBlock);
+            worldGroup.add(newBlock);
+            blockMeshes.set(key, newBlock);
             blockData.set(key, selectedBlock);
         }
 
@@ -615,11 +613,11 @@
                 const hex = '#' + BLOCK_COLORS[i].toString(16).padStart(6, '0');
                 ctx.fillStyle = hex;
                 ctx.fillRect(0, 0, 24, 24);
-                if (i === 0) { // трава — верх зеленый
+                if (i === 0) {
                     ctx.fillStyle = '#7CB342';
                     ctx.fillRect(0, 0, 24, 6);
                 }
-                if (i === 4) { // листья
+                if (i === 4) {
                     ctx.fillStyle = '#1B5E20';
                     for (let j = 0; j < 20; j++) {
                         ctx.fillRect(Math.floor(Math.random() * 24), Math.floor(Math.random() * 24), 2, 2);
@@ -648,14 +646,14 @@
         buildUI();
 
         // ============================================================
-        // 13. FPS СЧЕТЧИК
+        // 13. FPS
         // ============================================================
         let frameCount = 0;
         let fpsTime = 0;
         const fpsEl = document.getElementById('fps');
 
         // ============================================================
-        // 14. ГЛАВНЫЙ ЦИКЛ
+        // 14. ЦИКЛ
         // ============================================================
         let prevTime = performance.now();
 
@@ -665,7 +663,6 @@
 
             updatePlayer(delta);
 
-            // FPS
             frameCount++;
             if (time - fpsTime > 1000) {
                 fpsEl.textContent = `FPS: ${frameCount}`;
@@ -673,7 +670,6 @@
                 fpsTime = time;
             }
 
-            // статус
             const p = camera.position;
             document.getElementById('status').textContent =
                 `${Math.round(p.x)} ${Math.round(p.y)} ${Math.round(p.z)}  |  ${blockMeshes.size} блоков`;
@@ -693,7 +689,8 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         });
 
-        console.log('⛏️ Супер-оптимизированный Майнкрафт загружен!');
+        console.log('✅ Исправленная версия загружена!');
+        console.log(`👤 Рост игрока: ${PLAYER_HEIGHT} блоков`);
         console.log(`🧊 Блоков: ${blockMeshes.size}`);
     </script>
 </body>
