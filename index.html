@@ -528,7 +528,7 @@
         let selectedBlock = 0;
 
         function getTargetBlock() {
-            raycaster.setFromCamera(new THREE.Vector2(0.5, 0.5), camera);
+            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
 
             const meshes = [];
             for (const [key, mesh] of blockMeshes) {
